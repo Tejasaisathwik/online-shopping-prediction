@@ -1,0 +1,54 @@
+
+name: Build Test and Publish Online Shopping Prediction
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-test-publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: |
+          docker build -t ghcr.io/tejasaisathwik/online-shopping-prediction:latest .
+
+      - name: Start container and test API
+        run: |
+          docker run -d --name shopping-test -p 5000:5000 ghcr.io/tejasaisathwik/online-shopping-prediction:latest
+
+          for i in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:5000/; then
+              echo "API health test passed"
+              exit 0
+            fi
+            sleep 2
+          done
+
+          docker logs shopping-test
+          exit 1
+
+      - name: Stop test container
+        if: always()
+        run: |
+          docker logs shopping-test || true
+          docker stop shopping-test || true
+          docker rm shopping-test || true
+
+      - name: Log in to GitHub Container Registry
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Publish image to GHCR
+        run: |
+          docker push ghcr.io/tejasaisathwik/online-shopping-prediction:latest
